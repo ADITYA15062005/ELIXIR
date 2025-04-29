@@ -18,7 +18,7 @@ This project implements a Retrieval-Augmented Generation (RAG) model for persona
 
     LangChain
 
-    OpenAI/LLM
+    LLM
 
     Sentence Transformers / HuggingFace Embeddings
 
