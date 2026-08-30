@@ -1,0 +1,1 @@
+"""FastAPI recommend service package."""

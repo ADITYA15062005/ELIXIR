@@ -1,0 +1,3 @@
+# Versioned FAISS indexes live here (gitignored artifacts).
+# Build with: python -m ingest.cli --csv fixtures/sample_wines.csv
+# Example layout: indexes/<version>/  (LangChain FAISS files + manifest.json)
