@@ -1,78 +1,61 @@
-from langchain.vectorstores import FAISS
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.docstore.document import Document
-from langchain.prompts import PromptTemplate
-from langchain.chains import RetrievalQA
-import torch
-import os
-os.environ["STREAMLIT_DISABLE_WATCHDOG_WARNINGS"] = "true"
-os.environ["STREAMLIT_WATCHER_TYPE"] = "none"
-from dotenv import load_dotenv
-from langchain_community.llms import Ollama
-import streamlit as st
+"""Elixir wine RAG — thin Streamlit UI over shared `rag/` module.
 
-# Load environment variables
-load_dotenv()
-st.toast("✅ Environment variables loaded.")
-
-# Set LangChain tracing and API key
-os.environ["LANGCHAIN_TRACING_V2"] = "true"
-os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGCHAIN_API_KEY")
-st.toast("✅ LangChain configuration set.")
-
-# Set device for embedding model
-device = "cuda" if torch.cuda.is_available() else "cpu"
-st.toast(f"🖥 Torch device set to: {device}")
-
-# Initialize HuggingFace Embeddings
-embedder = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-MiniLM-L6-v2",
-    model_kwargs={"device": device}
-)
-st.toast("🔎 HuggingFace Embeddings initialized.")
-
-# Load FAISS index
-db = FAISS.load_local(
-    "faiss_index_alt/faiss_wine",
-    embeddings=embedder,
-    allow_dangerous_deserialization=True
-)
-st.toast("📁 FAISS index loaded from local storage.")
-
-# Define the RAG prompt template
-template = """
-You are a wine connoisseur. The user wants to know: {question}
-
-Here are some available wines:
-{context}
-
-Based on these, suggest the best fitting wine matching description.
+Configuration is loaded from ELIXIR/.env (see .env.example). No API keys or
+absolute paths are hardcoded.
 """
 
-prompt = PromptTemplate(
-    input_variables=["question", "context"],
-    template=template
-)
-st.toast("📋 PromptTemplate initialized.")
+from __future__ import annotations
 
-# Initialize the LLM
-llm = Ollama(model="llama3.2")
-st.toast("🤖 Ollama LLM initialized.")
+import os
 
-# Create the RetrievalQA chain
-rag_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    retriever=db.as_retriever(search_kwargs={"k": 3}),
-    chain_type="stuff",
-    chain_type_kwargs={"prompt": prompt}
-)
-st.toast("🔗 RetrievalQA chain initialized.")
+import streamlit as st
 
-# Streamlit UI
-st.title('Elixir – Where Taste Meets Technology.')
+from rag.chain import create_rag_resources, run_recommend
+from rag.config import ConfigError, get_settings
+
+os.environ["STREAMLIT_DISABLE_WATCHDOG_WARNINGS"] = "true"
+os.environ["STREAMLIT_WATCHER_TYPE"] = "none"
+
+
+def debug_toast(message: str, *, enabled: bool) -> None:
+    if enabled:
+        st.toast(message)
+
+
+try:
+    settings = get_settings(require_api_key=True)
+except ConfigError as exc:
+    st.error(str(exc))
+    st.stop()
+
+debug_toast("Environment variables loaded.", enabled=settings.app_debug)
+
+try:
+    resources = create_rag_resources(settings)
+except ConfigError as exc:
+    st.error(str(exc))
+    st.stop()
+except Exception as exc:  # noqa: BLE001
+    st.error(f"Failed to initialize RAG: {exc}")
+    st.stop()
+
+debug_toast(f"Torch device: {resources.device}", enabled=settings.app_debug)
+debug_toast("HuggingFace embeddings initialized.", enabled=settings.app_debug)
+debug_toast("FAISS index loaded.", enabled=settings.app_debug)
+debug_toast("PromptTemplate initialized.", enabled=settings.app_debug)
+debug_toast(f"Chat LLM initialized ({settings.llm_model}).", enabled=settings.app_debug)
+debug_toast("RetrievalQA chain initialized.", enabled=settings.app_debug)
+
+st.title("Elixir – Where Taste Meets Technology.")
 input_text = st.text_input("Search the topic you want")
 
 if input_text:
-    response = rag_chain.run(input_text)
+    response = run_recommend(
+        resources.db,
+        resources.llm,
+        input_text,
+        k=settings.retriever_k,
+        prompt=resources.prompt,
+    )
     st.write(response)
-    st.toast("✅ Query processed by RAG chain.")
+    debug_toast("Query processed by RAG chain.", enabled=settings.app_debug)

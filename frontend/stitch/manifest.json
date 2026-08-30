@@ -1,0 +1,14 @@
+{
+  "projectId": "15506381115647961256",
+  "projectName": "Elixir Apple-Inspired Wine RAG",
+  "fetchedAt": null,
+  "method": null,
+  "status": "assets-pending",
+  "note": "STITCH_API_KEY missing at scaffold time. Run npm run fetch:stitch when key is set, or drop exports into manual-export/.",
+  "designSystem": {
+    "id": "asset-stub-assets_d83f0ee48bae4cbb92026a2df42d7be2",
+    "localDir": "design-system/asset-stub-assets_d83f0ee48bae4cbb92026a2df42d7be2",
+    "files": []
+  },
+  "screens": []
+}
