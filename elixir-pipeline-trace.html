@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Elixir — Pipeline Trace</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<style>
+  :root{
+    --bg:#131313;
+    --surface:#1a1919;
+    --surface-2:#201f1f;
+    --surface-3:#2a2828;
+    --line:#3a3433;
+    --line-soft:#2a2626;
+    --ink:#e9e4e2;
+    --ink-dim:#948d8b;
+    --ink-faint:#5c5453;
+    --wine:#c8564a;
+    --wine-bright:#ff9a8c;
+    --gold:#d9ad4c;
+    --slate:#7fa8c9;
+    --ok:#7fb88a;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(1200px 600px at 15% -10%, #241a19 0%, transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, #191b21 0%, transparent 55%),
+      var(--bg);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:'JetBrains Mono',monospace;}
+  .sym{font-family:'Material Symbols Outlined';font-variation-settings:'wght' 350;font-size:18px;line-height:1;}
+
+  /* ---------- shell ---------- */
+  .shell{
+    max-width:1180px;
+    margin:0 auto;
+    padding:28px 20px 64px;
+  }
+  header.top{
+    display:flex;align-items:baseline;justify-content:space-between;
+    padding-bottom:20px;margin-bottom:22px;
+    border-bottom:1px solid var(--line-soft);
+  }
+  header.top .brand{
+    font-size:20px;font-weight:700;letter-spacing:-0.01em;color:var(--wine-bright);
+  }
+  header.top .brand span{color:var(--ink-dim);font-weight:400;font-size:13px;margin-left:10px;}
+  header.top .meta{font-size:11px;color:var(--ink-faint);letter-spacing:.06em;text-transform:uppercase;}
+
+  .layout{
+    display:grid;
+    grid-template-columns:250px 1fr;
+    gap:28px;
+    align-items:start;
+  }
+  @media (max-width:860px){
+    .layout{grid-template-columns:1fr;}
+    .railcard{order:2;}
+  }
+
+  /* ---------- rail (flow map) ---------- */
+  .railcard{
+    background:var(--surface);
+    border:1px solid var(--line-soft);
+    border-radius:14px;
+    padding:18px 16px;
+    position:sticky;
+    top:20px;
+  }
+  @media (max-width:860px){ .railcard{position:static;} }
+  .rail-title{
+    font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);
+    margin-bottom:14px;display:flex;align-items:center;gap:6px;
+  }
+  .rail{display:flex;flex-direction:column;}
+  .rnode{
+    display:flex;align-items:center;gap:10px;
+    padding:7px 8px;border-radius:8px;
+    cursor:default;
+    opacity:.42;
+    transition:opacity .25s ease;
+  }
+  .rnode.visited{opacity:1;}
+  .rnode.active{opacity:1;background:rgba(200,86,74,.10);}
+  .rnode .dot{
+    width:9px;height:9px;border-radius:50%;flex:0 0 auto;
+    background:var(--ink-faint);
+    border:1px solid var(--line);
+  }
+  .rnode.decision .dot{border-radius:2px;transform:rotate(45deg);}
+  .rnode.visited .dot{background:var(--wine);border-color:var(--wine);}
+  .rnode.active .dot{background:var(--wine-bright);border-color:var(--wine-bright);box-shadow:0 0 0 4px rgba(255,154,140,.18);}
+  .rnode.terminal-ok .dot{background:var(--ok);border-color:var(--ok);}
+  .rnode.terminal-empty .dot{background:var(--ink-faint);border-color:var(--ink-faint);}
+  .rnode .label{font-size:12.5px;color:var(--ink-dim);}
+  .rnode.visited .label{color:var(--ink);}
+  .rnode.active .label{color:var(--wine-bright);font-weight:600;}
+  .redge{
+    width:9px;margin-left:8.5px;
+    height:14px;
+    border-left:1px solid var(--line);
+  }
+  .redge.taken{border-left:1px solid var(--wine);}
+  .rbranch-tag{
+    font-size:9.5px;color:var(--gold);
+    margin-left:26px;margin-top:-4px;margin-bottom:2px;
+    font-family:'JetBrains Mono',monospace;
+    letter-spacing:.04em;
+  }
+
+  /* ---------- main stage ---------- */
+  .stagewrap{min-height:520px;display:flex;flex-direction:column;}
+  .crumbs{
+    font-size:11px;color:var(--ink-faint);font-family:'JetBrains Mono',monospace;
+    margin-bottom:14px;letter-spacing:.02em;
+    display:flex;flex-wrap:wrap;gap:4px;align-items:center;
+  }
+  .crumbs .seg{color:var(--ink-dim);}
+  .crumbs .sep{color:var(--line);}
+  .crumbs .tag{color:var(--gold);}
+
+  .stage{
+    background:linear-gradient(180deg, var(--surface-2), var(--surface));
+    border:1px solid var(--line-soft);
+    border-radius:16px;
+    padding:26px 26px 22px;
+    box-shadow:0 20px 40px -24px rgba(0,0,0,.7);
+    flex:1;
+    animation:rise .35s cubic-bezier(.16,1,.3,1);
+  }
+  @keyframes rise{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+
+  .stage-head{
+    display:flex;align-items:center;gap:10px;
+    padding-bottom:14px;margin-bottom:18px;
+    border-bottom:1px solid var(--line-soft);
+  }
+  .stage-head .ico{
+    width:34px;height:34px;border-radius:9px;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--surface-3);border:1px solid var(--line);color:var(--wine-bright);
+    flex:0 0 auto;
+  }
+  .stage-head .kicker{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);}
+  .stage-head h1{font-size:19px;margin:2px 0 0;font-weight:600;letter-spacing:-.01em;}
+
+  .field{
+    display:flex;flex-direction:column;gap:5px;
+    background:var(--surface-3);border:1px solid var(--line-soft);
+    border-radius:10px;padding:11px 13px;
+  }
+  .field .k{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);font-family:'JetBrains Mono',monospace;}
+  .field .v{font-size:13.5px;color:var(--ink);font-family:'JetBrains Mono',monospace;}
+  .field .v.accent{color:var(--wine-bright);}
+  .field .v.gold{color:var(--gold);}
+  .field .v.ok{color:var(--ok);}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+  @media (max-width:520px){ .grid3{grid-template-columns:1fr 1fr;} }
+
+  .prose{font-size:14.5px;line-height:1.6;color:var(--ink-dim);}
+  .prose b{color:var(--ink);font-weight:600;}
+  .divider{height:1px;background:var(--line-soft);margin:16px 0;}
+
+  table.hits{width:100%;border-collapse:collapse;font-size:12.5px;}
+  table.hits th{
+    text-align:left;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--ink-faint);padding:0 8px 8px 0;font-weight:500;
+  }
+  table.hits td{
+    padding:8px 8px 8px 0;border-top:1px solid var(--line-soft);
+    color:var(--ink-dim);font-family:'JetBrains Mono',monospace;
+  }
+  table.hits tr td:first-child{color:var(--ink);font-family:'Inter',sans-serif;}
+  table.hits td.score{color:var(--wine-bright);}
+
+  .quote{
+    border-left:2px solid var(--wine);
+    padding:4px 0 4px 14px;margin:14px 0;
+    font-size:14.5px;color:var(--ink);font-style:italic;
+  }
+
+  .codebox{
+    background:var(--bg);border:1px solid var(--line-soft);border-radius:10px;
+    padding:13px 14px;font-family:'JetBrains Mono',monospace;font-size:11.5px;
+    line-height:1.7;color:var(--ink-dim);overflow-x:auto;
+  }
+  .codebox .k2{color:var(--slate);}
+  .codebox .s2{color:var(--gold);}
+
+  /* decision */
+  .qbox{
+    text-align:center;padding:22px 10px 6px;
+  }
+  .qbox .diamond{
+    width:46px;height:46px;margin:0 auto 14px;border-radius:10px;
+    background:var(--surface-3);border:1px solid var(--line);
+    transform:rotate(45deg);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .qbox .diamond .sym{transform:rotate(-45deg);color:var(--gold);}
+  .qbox h2{font-size:17px;font-weight:600;margin:0 0 6px;}
+  .qbox p{font-size:13px;color:var(--ink-faint);margin:0 0 20px;}
+  .branch-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;padding-bottom:6px;}
+  .bbtn{
+    border:1px solid var(--line);background:var(--surface-3);color:var(--ink);
+    padding:12px 20px;border-radius:11px;font-size:13.5px;font-weight:600;
+    cursor:pointer;transition:all .18s ease;font-family:'Inter',sans-serif;
+    display:flex;align-items:center;gap:8px;min-width:190px;justify-content:center;
+  }
+  .bbtn small{display:block;font-weight:400;font-size:10.5px;color:var(--ink-faint);font-family:'JetBrains Mono',monospace;margin-top:2px;}
+  .bbtn:hover{border-color:var(--wine);background:rgba(200,86,74,.08);transform:translateY(-1px);}
+  .bbtn.pos:hover{border-color:var(--ok);background:rgba(127,184,138,.08);}
+  .bbtn.neg:hover{border-color:var(--ink-faint);}
+
+  /* terminal */
+  .termcard{
+    border-radius:14px;overflow:hidden;border:1px solid var(--line-soft);
+    display:flex;flex-direction:column;
+  }
+  .termcard .band{
+    height:5px;
+    background:var(--ok);
+  }
+  .termcard.empty .band{background:var(--ink-faint);}
+  .termcard .body{padding:24px;}
+  .term-icon{
+    width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    background:rgba(127,184,138,.12);color:var(--ok);margin-bottom:14px;
+  }
+  .termcard.empty .term-icon{background:var(--surface-3);color:var(--ink-faint);}
+
+  .winecard{
+    display:flex;flex-direction:column;gap:14px;
+  }
+  .winecard .badges{display:flex;gap:8px;}
+  .winecard .badge{
+    background:var(--bg);border:1px solid var(--line);padding:4px 9px;border-radius:6px;
+    font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--ink-dim);
+  }
+  .winecard h2{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em;}
+  .winecard .vintage{color:var(--gold);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.05em;}
+
+  /* footer nav */
+  .navbar{
+    display:flex;justify-content:space-between;align-items:center;
+    margin-top:18px;
+  }
+  .nbtn{
+    display:flex;align-items:center;gap:6px;
+    background:transparent;border:1px solid var(--line);color:var(--ink-dim);
+    padding:9px 16px;border-radius:9px;font-size:13px;cursor:pointer;
+    font-family:'Inter',sans-serif;transition:all .15s ease;
+  }
+  .nbtn:hover:not(:disabled){color:var(--ink);border-color:var(--ink-faint);}
+  .nbtn:disabled{opacity:.3;cursor:not-allowed;}
+  .nbtn.primary{background:var(--wine);border-color:var(--wine);color:#fff;}
+  .nbtn.primary:hover{background:#b64c41;}
+  .nbtn.restart{border-color:var(--line);}
+
+  .pulse::after{
+    content:'';position:absolute;inset:0;border-radius:inherit;
+    box-shadow:0 0 0 0 rgba(255,154,140,.5);
+    animation:pulseA 1.8s infinite;
+  }
+  @keyframes pulseA{
+    0%{box-shadow:0 0 0 0 rgba(255,154,140,.35);}
+    70%{box-shadow:0 0 0 8px rgba(255,154,140,0);}
+    100%{box-shadow:0 0 0 0 rgba(255,154,140,0);}
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="top">
+    <div><span class="brand">Elixir <span>Pipeline Trace · Sommelier RAG</span></span></div>
+    <div class="meta">Stage-by-stage walkthrough</div>
+  </header>
+
+  <div class="layout">
+    <!-- FLOW MAP -->
+    <div class="railcard">
+      <div class="rail-title"><span class="sym">route</span> Flow Map</div>
+      <div class="rail" id="rail"></div>
+    </div>
+
+    <!-- STAGE -->
+    <div class="stagewrap">
+      <div class="crumbs" id="crumbs"></div>
+      <div class="stage" id="stage"></div>
+      <div class="navbar">
+        <button class="nbtn" id="backBtn" onclick="goBack()"><span class="sym" style="font-size:16px;">arrow_back</span> Back</button>
+        <button class="nbtn restart" id="restartBtn" onclick="restart()"><span class="sym" style="font-size:16px;">refresh</span> Restart</button>
+        <button class="nbtn primary" id="nextBtn" onclick="goNext()">Continue <span class="sym" style="font-size:16px;">arrow_forward</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------------- graph definition (mirrors the flowchart) ---------------- */
+const GRAPH = {
+  input:            { type:'process', title:'Input', kicker:'Stage 1', icon:'input', next:'resolve_category' },
+  resolve_category: { type:'process', title:'resolve_category', kicker:'Stage 2', icon:'travel_explore', next:'retrieve_docs_1' },
+  retrieve_docs_1:  { type:'process', title:'retrieve_docs', kicker:'Stage 3', icon:'manage_search', next:'decision_1' },
+  decision_1:       { type:'decision', title:'Category filter and enough hits?', kicker:'Decision',
+                      branches:[
+                        {label:'ok',  next:'why_text',      tone:'pos', desc:'Filtered set clears the minimum-hits threshold'},
+                        {label:'no',  next:'empty_catalog',  tone:'neg', desc:'Too few results survive the category filter'}
+                      ]},
+  why_text:         { type:'process', title:'_why_text', kicker:'Stage 4', icon:'psychology', next:'build_card' },
+  build_card:       { type:'process', title:'build_recommend_card', kicker:'Stage 5', icon:'auto_awesome_mosaic', next:'decision_2' },
+  decision_2:       { type:'decision', title:'answer_matches_intent?', kicker:'Decision',
+                      branches:[
+                        {label:'yes', next:'return_card',    tone:'pos', desc:'Card content satisfies the detected intent'},
+                        {label:'no',  next:'retrieve_docs_2', tone:'neg', desc:'Mismatch — fall back to a stricter retrieval pass'}
+                      ]},
+  retrieve_docs_2:  { type:'process', title:'retrieve_docs (strict)', kicker:'Stage 6', icon:'filter_alt', next:'decision_3' },
+  decision_3:       { type:'decision', title:'matches?', kicker:'Decision',
+                      branches:[
+                        {label:'yes', next:'return_card',   tone:'pos', desc:'Strict pass produced a valid match'},
+                        {label:'no',  next:'empty_catalog',  tone:'neg', desc:'Still no reliable match after retry'}
+                      ]},
+  return_card:      { type:'terminal', title:'Return card string', kicker:'Result', outcome:'ok' },
+  empty_catalog:    { type:'terminal', title:'empty_catalog_message', kicker:'Result', outcome:'empty' },
+};
+
+/* fixed visual order for the map (both outcomes shown even if not yet reached) */
+const RAIL_ORDER = [
+  {id:'input'},
+  {id:'resolve_category'},
+  {id:'retrieve_docs_1'},
+  {id:'decision_1'},
+  {id:'why_text'},
+  {id:'build_card'},
+  {id:'decision_2'},
+  {id:'retrieve_docs_2'},
+  {id:'decision_3'},
+  {id:'return_card'},
+  {id:'empty_catalog'},
+];
+
+let path = ['input'];          // sequence of visited node ids
+let choices = {};              // decisionId -> branch label chosen
+
+function currentId(){ return path[path.length-1]; }
+
+/* ---------------- rendering: rail / flow map ---------------- */
+function renderRail(){
+  const rail = document.getElementById('rail');
+  rail.innerHTML = '';
+  RAIL_ORDER.forEach((n, idx) => {
+    const node = GRAPH[n.id];
+    const visited = path.includes(n.id);
+    const active = currentId() === n.id;
+    const div = document.createElement('div');
+    let cls = 'rnode';
+    if (node.type === 'decision') cls += ' decision';
+    if (node.type === 'terminal') cls += (node.outcome === 'ok' ? ' terminal-ok' : ' terminal-empty');
+    if (visited) cls += ' visited';
+    if (active) cls += ' active';
+    div.className = cls;
+    div.innerHTML = `<span class="dot"></span><span class="label">${node.title}</span>`;
+    rail.appendChild(div);
+
+    if (idx < RAIL_ORDER.length - 1 && n.id !== 'return_card') {
+      // draw connector unless this is a terminal-to-next skip we don't want visually
+      if (!(node.type==='terminal')) {
+        const nextId = RAIL_ORDER[idx+1].id;
+        const takenEdge = visited && path.includes(nextId) && path.indexOf(nextId) === path.indexOf(n.id)+1;
+        const edge = document.createElement('div');
+        edge.className = 'redge' + (takenEdge ? ' taken' : '');
+        rail.appendChild(edge);
+      }
+    }
+  });
+}
+
+/* ---------------- rendering: breadcrumbs ---------------- */
+function renderCrumbs(){
+  const el = document.getElementById('crumbs');
+  const parts = path.map((id,i) => {
+    let s = `<span class="seg">${GRAPH[id].title}</span>`;
+    if (choices[id]) s += ` <span class="tag">[${choices[id]}]</span>`;
+    return s;
+  });
+  el.innerHTML = parts.join(' <span class="sep">›</span> ');
+}
+
+/* ---------------- stage content ---------------- */
+function icoHead(node){
+  return `<div class="stage-head">
+    <div class="ico"><span class="sym">${node.icon || 'flag'}</span></div>
+    <div><div class="kicker">${node.kicker}</div><h1>${node.title}</h1></div>
+  </div>`;
+}
+
+function renderStageContent(id){
+  const node = GRAPH[id];
+  const stage = document.getElementById('stage');
+
+  if (node.type === 'process') {
+    stage.innerHTML = icoHead(node) + PROCESS_CONTENT[id]();
+  } else if (node.type === 'decision') {
+    stage.innerHTML = `
+      <div class="qbox">
+        <div class="diamond"><span class="sym">help</span></div>
+        <h2>${node.title}</h2>
+        <p>${node.kicker} · choose an outcome to continue the trace</p>
+        <div class="branch-row">
+          ${node.branches.map(b => `
+            <button class="bbtn ${b.tone==='pos'?'pos':'neg'}" onclick="choose('${id}','${b.label}','${b.next}')">
+              <span class="sym">${b.tone==='pos'?'check_circle':'cancel'}</span>
+              <span>${b.label}<small>${b.desc}</small></span>
+            </button>`).join('')}
+        </div>
+      </div>`;
+  } else if (node.type === 'terminal') {
+    stage.innerHTML = TERMINAL_CONTENT[id]();
+  }
+}
+
+/* ---------------- process stage copy ---------------- */
+const PROCESS_CONTENT = {
+  input: () => `
+    <div class="quote">"Looking for an earthy, complex red to pair with a heavily marbled ribeye steak."</div>
+    <div class="grid3">
+      <div class="field"><span class="k">Query</span><span class="v accent">string</span></div>
+      <div class="field"><span class="k">Category</span><span class="v">None (optional)</span></div>
+      <div class="field"><span class="k">k</span><span class="v gold">5</span></div>
+    </div>
+    <div class="divider"></div>
+    <p class="prose">The pipeline accepts a free-text <b>query</b>, an optional <b>category</b> hint, and <b>k</b>, the number of candidates to retrieve. No category was supplied here, so resolution is left to the next stage.</p>`,
+
+  resolve_category: () => `
+    <div class="grid2">
+      <div class="field"><span class="k">Method</span><span class="v">API category lookup → query detect fallback</span></div>
+      <div class="field"><span class="k">Resolved</span><span class="v accent">Red Wine / Robust</span></div>
+    </div>
+    <div class="divider"></div>
+    <div class="codebox">
+      <span class="k2">source</span>: <span class="s2">"query_detect"</span><br/>
+      <span class="k2">category</span>: <span class="s2">"red_wine_robust"</span><br/>
+      <span class="k2">confidence</span>: 0.91
+    </div>
+    <p class="prose" style="margin-top:14px;">No category was passed in, so <b>resolve_category</b> falls back to detecting one directly from the query text — "earthy, complex, ribeye" maps strongly onto a robust red profile.</p>`,
+
+  retrieve_docs_1: () => `
+    <div class="grid3">
+      <div class="field"><span class="k">Index</span><span class="v">FAISS · L2</span></div>
+      <div class="field"><span class="k">Embeddings</span><span class="v">text-embedding-3-large</span></div>
+      <div class="field"><span class="k">Top-k</span><span class="v gold">5</span></div>
+    </div>
+    <div class="divider"></div>
+    <table class="hits">
+      <tr><th>Candidate</th><th>Category</th><th>Similarity</th></tr>
+      <tr><td>Domaine de la Romanée-Conti, Grands Échézeaux</td><td>red_robust</td><td class="score">0.92</td></tr>
+      <tr><td>Château Margaux, Grand Vin</td><td>red_robust</td><td class="score">0.88</td></tr>
+      <tr><td>Barolo Riserva, Monfortino</td><td>red_robust</td><td class="score">0.86</td></tr>
+      <tr><td>Napa Cabernet, Estate Reserve</td><td>red_robust</td><td class="score">0.81</td></tr>
+      <tr><td>Rioja Gran Reserva</td><td>red_robust</td><td class="score">0.77</td></tr>
+    </table>`,
+
+  why_text: () => `
+    <div class="field" style="margin-bottom:14px;"><span class="k">Model</span><span class="v accent">short-form rationale LLM</span></div>
+    <div class="codebox">
+      <span class="k2">[TASK]</span> Write a one-sentence "why" for pairing the top candidate with a heavily marbled ribeye.
+    </div>
+    <div class="quote" style="margin-top:16px;">"Earthy tannins and dark truffle notes cut through the ribeye's fat while echoing its char."</div>
+    <p class="prose">This short justification travels forward into the recommendation card as the <b>why</b> field.</p>`,
+
+  build_card: () => `
+    <p class="prose" style="margin-bottom:14px;">Facts, the generated <b>why</b>, and a suggested pairing are assembled into a single structured card.</p>
+    <div class="codebox">
+      {<br/>
+      &nbsp;&nbsp;<span class="k2">"name"</span>: <span class="s2">"Domaine de la Romanée-Conti, Grands Échézeaux"</span>,<br/>
+      &nbsp;&nbsp;<span class="k2">"category"</span>: <span class="s2">"red_robust"</span>,<br/>
+      &nbsp;&nbsp;<span class="k2">"why"</span>: <span class="s2">"Earthy tannins cut through ribeye fat..."</span>,<br/>
+      &nbsp;&nbsp;<span class="k2">"suggested_pairing"</span>: <span class="s2">"Heavily marbled ribeye steak"</span><br/>
+      }
+    </div>`,
+
+  retrieve_docs_2: () => `
+    <div class="grid3">
+      <div class="field"><span class="k">Mode</span><span class="v accent">Strict fetch</span></div>
+      <div class="field"><span class="k">Threshold</span><span class="v gold">0.90</span></div>
+      <div class="field"><span class="k">Why</span><span class="v">regenerated (strict)</span></div>
+    </div>
+    <div class="divider"></div>
+    <p class="prose">The first candidate didn't satisfy intent-matching, so retrieval re-runs with a tighter similarity threshold and a fresh, more targeted <b>why</b> is generated for whatever now qualifies.</p>`,
+};
+
+/* ---------------- terminal stage copy ---------------- */
+const TERMINAL_CONTENT = {
+  return_card: () => `
+    <div class="termcard">
+      <div class="band"></div>
+      <div class="body winecard">
+        <div class="term-icon"><span class="sym">task_alt</span></div>
+        <div class="badges">
+          <span class="badge">98 PTS</span><span class="badge">13.5% ABV</span><span class="badge mono">red_robust</span>
+        </div>
+        <h2>Domaine de la Romanée-Conti</h2>
+        <div class="vintage">Grands Échézeaux Grand Cru, 2018</div>
+        <p class="prose">Earthy undertones of damp forest floor and dark truffle seamlessly integrate with the rich fat of a marbled ribeye, while structured, silky tannins provide a palate-cleansing finish.</p>
+        <div class="codebox">return <span class="k2">card_string</span> → serialized JSON card sent to the client</div>
+      </div>
+    </div>`,
+  empty_catalog: () => `
+    <div class="termcard empty">
+      <div class="band"></div>
+      <div class="body">
+        <div class="term-icon"><span class="sym">inventory_2</span></div>
+        <h2 style="margin:0 0 8px;font-size:20px;">No confident match in the catalog</h2>
+        <p class="prose">Neither the category filter nor the stricter retrieval pass produced enough high-confidence hits. The pipeline returns a plain-language empty state instead of guessing.</p>
+        <div class="codebox" style="margin-top:14px;">return <span class="k2">empty_catalog_message</span> → <span class="s2">"We couldn't find a confident pairing for that — try loosening the category or rephrasing."</span></div>
+      </div>
+    </div>`,
+};
+
+/* ---------------- navigation ---------------- */
+function render(){
+  renderRail();
+  renderCrumbs();
+  renderStageContent(currentId());
+
+  const node = GRAPH[currentId()];
+  document.getElementById('backBtn').disabled = path.length <= 1;
+  const nextBtn = document.getElementById('nextBtn');
+  if (node.type === 'decision') {
+    nextBtn.style.visibility = 'hidden';
+  } else if (node.type === 'terminal') {
+    nextBtn.style.visibility = 'hidden';
+  } else {
+    nextBtn.style.visibility = 'visible';
+    nextBtn.disabled = false;
+  }
+}
+
+function goNext(){
+  const node = GRAPH[currentId()];
+  if (node.type === 'process' && node.next) {
+    path.push(node.next);
+    render();
+  }
+}
+
+function choose(decisionId, label, nextId){
+  choices[decisionId] = label;
+  path.push(nextId);
+  render();
+}
+
+function goBack(){
+  if (path.length <= 1) return;
+  const removed = path.pop();
+  // clear a stored choice if we're stepping back off a decision's result
+  const prev = currentId();
+  if (GRAPH[prev] && GRAPH[prev].type === 'decision') {
+    delete choices[prev];
+  }
+  render();
+}
+
+function restart(){
+  path = ['input'];
+  choices = {};
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
